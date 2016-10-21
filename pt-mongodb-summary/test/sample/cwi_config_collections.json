@@ -1,0 +1,15 @@
+[
+    "actionlog",
+    "changelog",
+    "chunks",
+    "collections",
+    "databases",
+    "lockpings",
+    "locks",
+    "mongos",
+    "settings",
+    "shards",
+    "system.indexes",
+    "tags",
+    "version"
+]

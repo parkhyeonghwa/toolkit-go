@@ -1,0 +1,8 @@
+{
+    "name": "local.oplog.rs",
+    "options": {
+        "autoIndexId": false,
+        "capped": true,
+        "size": 1.8849068646e+10
+    }
+}
