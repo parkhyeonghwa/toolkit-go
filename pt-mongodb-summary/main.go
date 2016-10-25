@@ -4,18 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"log"
 	"os"
 	"strings"
 	"time"
-
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
 
 	flag "github.com/ogier/pflag"
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/templates"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/process"
+	"labix.org/v2/mgo"
+	"labix.org/v2/mgo/bson"
 )
 
 type options struct {
@@ -32,6 +32,7 @@ type hostInfo struct {
 	HostSystemCPUArch string
 	HostDatabases     int
 	HostCollections   int
+	DBPath            string
 
 	ProcPath         string
 	ProcUserName     string
@@ -103,55 +104,81 @@ type clusterwideInfo struct {
 func main() {
 
 	var opts options
-	flag.StringP("host", "H", "localhost:27017", "host:port")
+	flag.StringVarP(&opts.Host, "host", "H", "localhost:27017", "host:port")
+	flag.StringVarP(&opts.User, "user", "u", "", "username")
+	flag.StringVarP(&opts.Password, "password", "p", "", "password")
 	flag.Parse()
 
-	hostnames, err := getHostnames(opts.Host)
+	di := &mgo.DialInfo{
+		Username: opts.User,
+		Password: opts.Password,
+		Addrs:    []string{opts.Host},
+	}
+	hostnames, err := getHostnames(di)
 	if err != nil {
-		return
+		log.Printf("cannot connect to the db: %s", err)
+		os.Exit(1)
 	}
 
-	session, err := mgo.Dial(opts.Host)
+	session, err := mgo.DialWithInfo(di)
 	if err != nil {
-		return
+		log.Printf("cannot connect to the db: %s", err)
+		os.Exit(1)
 	}
 	defer session.Close()
 
 	//
-	if replicaMembers, err := GetReplicasetMembers(hostnames); err == nil {
+	if replicaMembers, err := GetReplicasetMembers(hostnames, di); err != nil {
+		log.Printf("[Error] cannot get replicaset members: %v\n", err)
+	} else {
 		t := template.Must(template.New("replicas").Parse(templates.Replicas))
 		t.Execute(os.Stdout, replicaMembers)
 	}
 
 	//
-	if hostInfo, err := GetHostinfo(session); err == nil {
+	if hostInfo, err := GetHostinfo(session); err != nil {
+		log.Printf("[Error] cannot get host info: %v\n", err)
+	} else {
 		t := template.Must(template.New("hosttemplateData").Parse(templates.HostInfo))
 		t.Execute(os.Stdout, hostInfo)
 	}
 
 	var sampleCount int64 = 5
 	var sampleRate time.Duration = 1 // in seconds
-	if rops, err := GetOpCountersStats(session, sampleCount, sampleRate); err == nil {
+	if rops, err := GetOpCountersStats(session, sampleCount, sampleRate); err != nil {
+		log.Printf("[Error] cannot get Opcounters stats: %v\n", err)
+	} else {
 		t := template.Must(template.New("runningOps").Parse(templates.RunningOps))
 		t.Execute(os.Stdout, rops)
 	}
 
-	if security, err := GetSecuritySettings(session); err == nil {
+	if security, err := GetSecuritySettings(session); err != nil {
+		log.Printf("[Error] cannot get security settings: %v\n", err)
+	} else {
 		t := template.Must(template.New("ssl").Parse(templates.Security))
 		t.Execute(os.Stdout, security)
 	}
 
-	if oplogInfo, err := GetOplogInfo(hostnames); err == nil && len(oplogInfo) > 0 {
-		t := template.Must(template.New("oplogInfo").Parse(templates.Oplog))
-		t.Execute(os.Stdout, oplogInfo[0])
+	if oplogInfo, err := GetOplogInfo(hostnames, di); err != nil {
+		log.Printf("[Error] cannot get Oplog info: %v\n", err)
+	} else {
+		if len(oplogInfo) > 0 {
+			t := template.Must(template.New("oplogInfo").Parse(templates.Oplog))
+			t.Execute(os.Stdout, oplogInfo[0])
+		}
 	}
 
-	if cwi, err := GetClusterwideInfo(session); err == nil {
-		t := template.Must(template.New("oplogInfo").Parse(templates.Clusterwide))
+	if cwi, err := GetClusterwideInfo(session); err != nil {
+		log.Printf("[Error] cannot get cluster wide info: %v\n", err)
+	} else {
+		t := template.Must(template.New("clusterwide").Parse(templates.Clusterwide))
 		t.Execute(os.Stdout, cwi)
 	}
-	if bs, err := GetBalancerStats(session); err == nil {
-		t := template.Must(template.New("oplogInfo").Parse(templates.BalancerStats))
+
+	if bs, err := GetBalancerStats(session); err != nil {
+		log.Printf("[Error] cannot get balancer stats: %v\n", err)
+	} else {
+		t := template.Must(template.New("balancer").Parse(templates.BalancerStats))
 		t.Execute(os.Stdout, bs)
 	}
 
@@ -162,6 +189,12 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 	hi := proto.HostInfo{}
 	if err := session.Run(bson.M{"hostInfo": 1}, &hi); err != nil {
 		return nil, errors.Wrap(err, "GetHostInfo.hostInfo")
+	}
+
+	cmdOpts := proto.CommandLineOptions{}
+	err := session.DB("admin").Run(bson.D{{"getCmdLineOpts", 1}, {"recordStats", 1}}, &cmdOpts)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot get command line options")
 	}
 
 	ss := proto.ServerStatus{}
@@ -182,6 +215,7 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 		HostSystemCPUArch: hi.System.CpuArch,
 		HostDatabases:     hi.DatabasesCount,
 		HostCollections:   hi.CollectionsCount,
+		DBPath:            "/data/db", // Sets default. It will be overriden later if necessary
 
 		ProcessName: ss.Process,
 		Version:     ss.Version,
@@ -195,12 +229,16 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 		i.ReplicasetName = ss.Repl.SetName
 	}
 
+	if cmdOpts.Parsed.Storage.DbPath != "" {
+		i.DBPath = cmdOpts.Parsed.Storage.DbPath
+	}
+
 	return i, nil
 }
 
-func getHostnames(hostname string) ([]string, error) {
+func getHostnames(di *mgo.DialInfo) ([]string, error) {
 
-	session, err := mgo.Dial(hostname)
+	session, err := mgo.DialWithInfo(di)
 	if err != nil {
 		return nil, err
 	}
@@ -209,10 +247,11 @@ func getHostnames(hostname string) ([]string, error) {
 	shardsInfo := &proto.ShardsInfo{}
 	err = session.Run("listShards", shardsInfo)
 	if err != nil {
+		fmt.Printf("Cannot list shards: %v\n", err)
 		return nil, errors.Wrap(err, "cannot list shards")
 	}
 
-	hostnames := []string{hostname}
+	hostnames := []string{di.Addrs[0]}
 	if shardsInfo != nil {
 		for _, shardInfo := range shardsInfo.Shards {
 			m := strings.Split(shardInfo.Host, "/")
@@ -272,11 +311,12 @@ func sizeAndUnit(size int64) (float64, string) {
 	return newSize, unit[idx]
 }
 
-func GetReplicasetMembers(hostnames []string) ([]proto.Members, error) {
+func GetReplicasetMembers(hostnames []string, di *mgo.DialInfo) ([]proto.Members, error) {
 	replicaMembers := []proto.Members{}
 
 	for _, hostname := range hostnames {
-		session, err := mgo.Dial(hostname)
+		di.Addrs = []string{hostname}
+		session, err := mgo.DialWithInfo(di)
 		if err != nil {
 			return nil, errors.Wrapf(err, "getReplicasetMembers. cannot connect to %s", hostname)
 		}

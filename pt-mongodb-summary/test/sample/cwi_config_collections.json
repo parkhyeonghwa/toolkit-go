@@ -2,7 +2,6 @@
     "actionlog",
     "changelog",
     "chunks",
-    "collections",
     "databases",
     "lockpings",
     "locks",

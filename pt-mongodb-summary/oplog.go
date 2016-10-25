@@ -12,7 +12,7 @@ import (
 	"labix.org/v2/mgo/bson"
 )
 
-func GetOplogInfo(hostnames []string) ([]proto.OplogInfo, error) {
+func GetOplogInfo(hostnames []string, di *mgo.DialInfo) ([]proto.OplogInfo, error) {
 
 	results := proto.OpLogs{}
 
@@ -20,7 +20,8 @@ func GetOplogInfo(hostnames []string) ([]proto.OplogInfo, error) {
 		result := proto.OplogInfo{
 			Hostname: hostname,
 		}
-		session, err := mgo.Dial(hostname)
+		di.Addrs = []string{hostname}
+		session, err := mgo.DialWithInfo(di)
 		if err != nil {
 			return nil, errors.Wrapf(err, "cannot connect to %s", hostname)
 		}
