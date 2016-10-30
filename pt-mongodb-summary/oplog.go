@@ -7,9 +7,8 @@ import (
 
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/pkg/errors"
-
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func GetOplogInfo(hostnames []string, di *mgo.DialInfo) ([]proto.OplogInfo, error) {

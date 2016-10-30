@@ -11,8 +11,8 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/test"
-	"labix.org/v2/mgo" // mock
-	"labix.org/v2/mgo/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 func TestGetHostnames(t *testing.T) {

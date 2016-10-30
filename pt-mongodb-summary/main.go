@@ -15,8 +15,8 @@ import (
 	"github.com/percona/toolkit-go/pt-mongodb-summary/templates"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/process"
-	"labix.org/v2/mgo"
-	"labix.org/v2/mgo/bson"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type hostInfo struct {
