@@ -1,2 +1,4 @@
 pt-mongodb-summary
 coverage.out
+vendor/*
+!vendor/vendor.json
