@@ -37,12 +37,13 @@ func TestGetHostnames(t *testing.T) {
 		OK: 1,
 	}
 
-	mgo.EXPECT().Dial(gomock.Any()).Return(session, nil)
+	mgo.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
 	session.EXPECT().Run("listShards", gomock.Any()).SetArg(1, mockShardsInfo)
 	session.EXPECT().Close()
 
 	expect := []string{"localhost", "localhost:17001", "localhost:18001"}
-	rss, err := getHostnames("localhost")
+	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
+	rss, err := getHostnames(di)
 	if err != nil {
 		t.Errorf("getHostnames: %v", err)
 	}
@@ -159,11 +160,12 @@ func TestGetReplicasetMembers(t *testing.T) {
 			Set:           "r1",
 		}}
 
-	mgo.EXPECT().Dial(gomock.Any()).Return(session, nil)
+	mgo.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
 	session.EXPECT().Run(bson.M{"replSetGetStatus": 1}, gomock.Any()).SetArg(1, mockrss)
 	session.EXPECT().Close()
 
-	rss, err := getReplicasetMembers([]string{"localhost"})
+	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
+	rss, err := GetReplicasetMembers([]string{"localhost"}, di)
 	if err != nil {
 		t.Errorf("getReplicasetMembers: %v", err)
 	}

@@ -9,7 +9,8 @@ import (
 	"strings"
 	"time"
 
-	flag "github.com/ogier/pflag"
+	"github.com/howeyc/gopass"
+	"github.com/pborman/getopt"
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/templates"
 	"github.com/pkg/errors"
@@ -17,13 +18,6 @@ import (
 	"labix.org/v2/mgo"
 	"labix.org/v2/mgo/bson"
 )
-
-type options struct {
-	Host     string
-	User     string
-	Password string
-	Debug    bool
-}
 
 type hostInfo struct {
 	ThisHostID        int
@@ -101,19 +95,52 @@ type clusterwideInfo struct {
 	UnshardedDataSizeScale  string
 }
 
+type options struct {
+	Host     string
+	User     string
+	Password string
+	AuthDB   string
+	Debug    bool
+}
+
 func main() {
 
-	var opts options
-	flag.StringVarP(&opts.Host, "host", "H", "localhost:27017", "host:port")
-	flag.StringVarP(&opts.User, "user", "u", "", "username")
-	flag.StringVarP(&opts.Password, "password", "p", "", "password")
-	flag.Parse()
+	opts := options{Host: "localhost:27017"}
+	help := getopt.BoolLong("help", '?', "Show help")
+	getopt.StringVarLong(&opts.User, "user", 'u', "", "username")
+	getopt.StringVarLong(&opts.Password, "password", 'p', "", "password").SetOptional()
+	getopt.StringVarLong(&opts.AuthDB, "auth-db", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
+	getopt.SetParameters("host[:port]")
+
+	getopt.Parse()
+	if *help {
+		getopt.Usage()
+		return
+	}
+
+	args := getopt.Args() // positional arg
+	if len(args) > 0 {
+		opts.Host = args[0]
+	}
+
+	if getopt.IsSet("password") && opts.Password == "" {
+		print("Password: ")
+		pass, err := gopass.GetPasswd()
+		if err != nil {
+			fmt.Println(err)
+			os.Exit(2)
+		}
+		opts.Password = string(pass)
+	}
 
 	di := &mgo.DialInfo{
 		Username: opts.User,
 		Password: opts.Password,
 		Addrs:    []string{opts.Host},
+		FailFast: true,
+		Source:   opts.AuthDB,
 	}
+
 	hostnames, err := getHostnames(di)
 	if err != nil {
 		log.Printf("cannot connect to the db: %s", err)
@@ -281,7 +308,6 @@ func GetClusterwideInfo(session *mgo.Session) (*clusterwideInfo, error) {
 		if err != nil {
 			continue
 		}
-		write("cwi_"+db.Name+"_collections", collections)
 		cwi.TotalCollectionsCount += len(collections)
 		if len(db.Shards) == 1 {
 			cwi.UnshardedDataSize += db.SizeOnDisk
