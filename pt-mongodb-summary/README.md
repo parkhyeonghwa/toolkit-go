@@ -7,6 +7,9 @@ pt-mongodb-summary [options] [host:[port]]
 Default host:port is `localhost:27017`. 
 For better results, host must be a **mongos** server.
 
+##Binaries
+Please check the `releases` tab to download the binaries.  
+
 ###Paramters
 
 |Short|Long|default||
