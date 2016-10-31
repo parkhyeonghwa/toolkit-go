@@ -19,6 +19,10 @@ Please check the [releases](https://github.com/percona/toolkit-go/releases) tab 
 |a|auth-db|admin|database used to establish credentials and privileges with a MongoDB server|
 
 
+`-p` is an optional parameter. If it is used it shouldn't have a blank between the parameter and its value: `-p<password>`  
+It can be also used as `-p` without specifying a password; in that case, the program will ask the password to avoid using a password in the command line.  
+
+
 ###Output example
 ```
 # Instances ####################################################################################
