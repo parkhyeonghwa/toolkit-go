@@ -44,6 +44,7 @@ type procInfo struct {
 	CreateTime time.Time
 	Path       string
 	UserName   string
+	Error      error
 }
 
 type security struct {
@@ -142,10 +143,6 @@ func main() {
 	}
 
 	hostnames, err := getHostnames(di)
-	if err != nil {
-		log.Printf("cannot connect to the db: %s", err)
-		os.Exit(1)
-	}
 
 	session, err := mgo.DialWithInfo(di)
 	if err != nil {
@@ -231,7 +228,7 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 
 	pi := procInfo{}
 	if err := getProcInfo(int32(ss.Pid), &pi); err != nil {
-		return nil, errors.Wrap(err, "GetHostInfo.getProcInfo")
+		pi.Error = err
 	}
 
 	nodeType, _ := getNodeType(session)
@@ -242,7 +239,7 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 		HostSystemCPUArch: hi.System.CpuArch,
 		HostDatabases:     hi.DatabasesCount,
 		HostCollections:   hi.CollectionsCount,
-		DBPath:            "/data/db", // Sets default. It will be overriden later if necessary
+		DBPath:            "", // Sets default. It will be overriden later if necessary
 
 		ProcessName: ss.Process,
 		Version:     ss.Version,
@@ -274,7 +271,6 @@ func getHostnames(di *mgo.DialInfo) ([]string, error) {
 	shardsInfo := &proto.ShardsInfo{}
 	err = session.Run("listShards", shardsInfo)
 	if err != nil {
-		fmt.Printf("Cannot list shards: %v\n", err)
 		return nil, errors.Wrap(err, "cannot list shards")
 	}
 

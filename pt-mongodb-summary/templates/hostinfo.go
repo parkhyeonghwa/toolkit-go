@@ -14,7 +14,9 @@ const HostInfo = `# This host
                   Started | {{.ProcCreateTime}}
                 Databases | {{.HostDatabases}}
               Collections | {{.HostCollections}}
+{{- if .DBPath }}
                   Datadir | {{.DBPath}}
+{{- end }}
                 Processes | {{.ProcProcessCount}}
              Process Type | {{.NodeType}}
 {{ if .ReplicaSetName -}}

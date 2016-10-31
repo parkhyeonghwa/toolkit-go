@@ -11,7 +11,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/test"
-	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2" // mock
 	"gopkg.in/mgo.v2/bson"
 )
 
