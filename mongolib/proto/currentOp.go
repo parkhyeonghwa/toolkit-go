@@ -16,7 +16,7 @@ type AcquireCount struct {
 	W  float64 `bson:"W"`
 }
 
-type Global struct {
+type LockInfo struct {
 	DeadlockCount       AcquireCount `bson:"deadlockCount"`
 	AcquireCount        AcquireCount `bson:"acquireCount"`
 	AcquireWaitCount    AcquireCount `bson:"acquireWaitCount"`
@@ -24,18 +24,18 @@ type Global struct {
 }
 
 type CurrentOpLockStats struct {
-	Global        Global      `bson:"Global"`
+	Global        LockInfo    `bson:"Global"`
 	MMAPV1Journal interface{} `bson:"MMAPV1Journal"`
 	Database      interface{} `bson:"Database"`
 }
 
 type Locks struct {
-	Global        string `bson:"Global"`
-	MMAPV1Journal string `bson:"MMAPV1Journal"`
-	Database      string `bson:"Database"`
-	Collection    string `bson:"Collection"`
-	Metadata      string `bson:"Metadata"`
-	Oplog         string `bson:"oplog"`
+	Global        LockInfo `bson:"Global"`
+	MMAPV1Journal LockInfo `bson:"MMAPV1Journal"`
+	Database      LockInfo `bson:"Database"`
+	Collection    LockInfo `bson:"Collection"`
+	Metadata      LockInfo `bson:"Metadata"`
+	Oplog         LockInfo `bson:"oplog"`
 }
 
 type Inprog struct {
