@@ -19,6 +19,7 @@ var Server dbtest.DBServer
 func TestMain(m *testing.M) {
 	// The tempdir is created so MongoDB has a location to store its files.
 	// Contents are wiped once the server stops
+	os.Setenv("CHECK_SESSIONS", "0")
 	tempDir, _ := ioutil.TempDir("", "testing")
 	Server.SetPath(tempDir)
 

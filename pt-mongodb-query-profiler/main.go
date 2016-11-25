@@ -2,7 +2,6 @@ package main
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -15,7 +14,6 @@ import (
 	"github.com/montanaflynn/stats"
 	"github.com/pborman/getopt"
 	"github.com/percona/toolkit-go/mongolib/proto"
-	"github.com/y0ssar1an/q"
 	mgo "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -30,13 +28,15 @@ type iter interface {
 }
 
 type options struct {
+	AuthDB   string
+	Database string
+	Debug    bool
 	Help     bool
 	Host     string
-	User     string
+	Limit    int
+	OrderBy  []string
 	Password string
-	Database string
-	AuthDB   string
-	Debug    bool
+	User     string
 }
 
 const (
@@ -56,19 +56,20 @@ func (a times) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a times) Less(i, j int) bool { return a[i].Before(a[j]) }
 
 type stat struct {
-	ID          string
-	Fingerprint string
-	Namespace   string
-	Query       map[string]interface{}
-	Count       int
-	TableScan   bool
-	NScanned    []float64
-	NReturned   []float64
-	QueryTime   []float64 // in milliseconds
-	LockTime    times
-	BlockedTime times
-	FirstSeen   time.Time
-	LastSeen    time.Time
+	ID             string
+	Fingerprint    string
+	Namespace      string
+	Query          map[string]interface{}
+	Count          int
+	TableScan      bool
+	NScanned       []float64
+	NReturned      []float64
+	QueryTime      []float64 // in milliseconds
+	ResponseLength []float64
+	LockTime       times
+	BlockedTime    times
+	FirstSeen      time.Time
+	LastSeen       time.Time
 }
 
 type groupKey struct {
@@ -88,17 +89,19 @@ type statistics struct {
 }
 
 type queryInfo struct {
-	Rank        int
-	ID          string
-	Count       int
-	Ratio       float64
-	Fingerprint string
-	Namespace   string
-	Scanned     statistics
-	Returned    statistics
-	QueryTime   statistics
-	FirstSeen   time.Time
-	LastSeen    time.Time
+	Rank           int
+	ID             string
+	Count          int
+	Ratio          float64
+	QPS            float64
+	Fingerprint    string
+	Namespace      string
+	Scanned        statistics
+	Returned       statistics
+	QueryTime      statistics
+	ResponseLength statistics
+	FirstSeen      time.Time
+	LastSeen       time.Time
 }
 
 func main() {
@@ -127,33 +130,115 @@ func main() {
 	}
 
 	i := session.DB(di.Database).C("system.profile").Find(bson.M{"op": bson.M{"$nin": []string{"getmore", "delete"}}}).Sort("-$natural").Iter()
-	queries := getData(i)
+	queries := sortQueries(getData(i), opts.OrderBy)
 
-	queryStats := calcQueryStats(queries)
+	uptime := uptime(session)
 
-	t := template.Must(template.New("oplogInfo").Parse(getTemplate()))
+	queryTotals := aggregateQueryStats(queries, uptime)
+	tt, _ := template.New("query").Funcs(template.FuncMap{
+		"Format": format,
+	}).Parse(getTotalsTemplate())
+	tt.Execute(os.Stdout, queryTotals)
+
+	queryStats := calcQueryStats(queries, uptime)
+	t, _ := template.New("query").Funcs(template.FuncMap{
+		"Format": format,
+	}).Parse(getQueryTemplate())
+
+	if opts.Limit > 0 && len(queryStats) > opts.Limit {
+		queryStats = queryStats[:opts.Limit]
+	}
 	for _, qs := range queryStats {
-		q.Q(qs)
 		t.Execute(os.Stdout, qs)
 	}
 
 }
 
-func calcQueryStats(queries []stat) []queryInfo {
+// format scales a number and returns a string made of the scaled value and unit (K=Kilo, M=Mega, T=Tera)
+// using I.F where i is the number of digits for the integer part and F is the number of digits for the
+// decimal part
+// Examples:
+// format(1000, 5.0) will return 1K
+// format(1000, 5.2) will return 1.00k
+func format(val float64, size float64) string {
+	units := []string{"K", "M", "T"}
+	unit := " "
+	intSize := int64(size)
+	decSize := int64((size - float64(intSize)) * 10)
+	for i := 0; i < 3; i++ {
+		if val > 1000 {
+			val /= 1000
+			unit = units[i]
+		}
+	}
+
+	pfmt := fmt.Sprintf("%% %d.%df", intSize, decSize)
+	fval := fmt.Sprintf(pfmt, val)
+
+	return fmt.Sprintf("%s%s", fval, unit)
+}
+
+func uptime(session *mgo.Session) int64 {
+	ss := proto.ServerStatus{}
+	if err := session.DB("admin").Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, &ss); err != nil {
+		return 0
+	}
+	return ss.Uptime
+}
+
+func aggregateQueryStats(queries []stat, uptime int64) queryInfo {
+	qi := queryInfo{}
+	qs := stat{}
+	_, totalScanned, totalReturned, totalQueryTime, totalBytes := calcTotals(queries)
+	for _, query := range queries {
+		qs.NScanned = append(qs.NScanned, query.NScanned...)
+		qs.NReturned = append(qs.NReturned, query.NReturned...)
+		qs.QueryTime = append(qs.QueryTime, query.QueryTime...)
+		qs.ResponseLength = append(qs.ResponseLength, query.ResponseLength...)
+		qi.Count += query.Count
+	}
+	qi.Scanned = calcStats(qs.NScanned)
+	qi.Returned = calcStats(qs.NReturned)
+	qi.QueryTime = calcStats(qs.QueryTime)
+	qi.ResponseLength = calcStats(qs.ResponseLength)
+	qi.QPS = float64(int64(qs.Count) / uptime)
+
+	if totalScanned > 0 {
+		qi.Scanned.Pct = qi.Scanned.Total * 100 / totalScanned
+	}
+	if totalReturned > 0 {
+		qi.Returned.Pct = qi.Returned.Total * 100 / totalReturned
+	}
+	if totalQueryTime > 0 {
+		qi.QueryTime.Pct = qi.QueryTime.Total * 100 / totalQueryTime
+	}
+	if totalBytes > 0 {
+		qi.ResponseLength.Pct = qi.ResponseLength.Total / totalBytes
+	}
+	if qi.Returned.Total > 0 {
+		qi.Ratio = qi.Scanned.Total / qi.Returned.Total
+	}
+
+	return qi
+}
+
+func calcQueryStats(queries []stat, uptime int64) []queryInfo {
 	queryStats := []queryInfo{}
-	_, totalScanned, totalReturned, totalQueryTime := calcTotals(queries)
+	_, totalScanned, totalReturned, totalQueryTime, totalBytes := calcTotals(queries)
 	for rank, query := range queries {
 		qi := queryInfo{
-			Rank:        rank,
-			Count:       query.Count,
-			ID:          query.ID,
-			Fingerprint: query.Fingerprint,
-			Scanned:     calcStats(query.NScanned),
-			Returned:    calcStats(query.NReturned),
-			QueryTime:   calcStats(query.QueryTime),
-			FirstSeen:   query.FirstSeen,
-			LastSeen:    query.LastSeen,
-			Namespace:   query.Namespace,
+			Rank:           rank,
+			Count:          query.Count,
+			ID:             query.ID,
+			Fingerprint:    query.Fingerprint,
+			Scanned:        calcStats(query.NScanned),
+			Returned:       calcStats(query.NReturned),
+			QueryTime:      calcStats(query.QueryTime),
+			ResponseLength: calcStats(query.ResponseLength),
+			FirstSeen:      query.FirstSeen,
+			LastSeen:       query.LastSeen,
+			Namespace:      query.Namespace,
+			QPS:            float64(int64(query.Count) / uptime),
 		}
 		if totalScanned > 0 {
 			qi.Scanned.Pct = qi.Scanned.Total * 100 / totalScanned
@@ -163,6 +248,9 @@ func calcQueryStats(queries []stat) []queryInfo {
 		}
 		if totalQueryTime > 0 {
 			qi.QueryTime.Pct = qi.QueryTime.Total * 100 / totalQueryTime
+		}
+		if totalBytes > 0 {
+			qi.ResponseLength.Pct = qi.ResponseLength.Total / totalBytes
 		}
 		if qi.Returned.Total > 0 {
 			qi.Ratio = qi.Scanned.Total / qi.Returned.Total
@@ -179,12 +267,13 @@ func getTotals(queries []stat) stat {
 		qt.NScanned = append(qt.NScanned, query.NScanned...)
 		qt.NReturned = append(qt.NReturned, query.NReturned...)
 		qt.QueryTime = append(qt.QueryTime, query.QueryTime...)
+		qt.ResponseLength = append(qt.ResponseLength, query.ResponseLength...)
 	}
 	return qt
 
 }
 
-func calcTotals(queries []stat) (totalCount int, totalScanned, totalReturned, totalQueryTime float64) {
+func calcTotals(queries []stat) (totalCount int, totalScanned, totalReturned, totalQueryTime, totalBytes float64) {
 
 	for _, query := range queries {
 		totalCount += query.Count
@@ -197,6 +286,9 @@ func calcTotals(queries []stat) (totalCount int, totalScanned, totalReturned, to
 
 		queryTime, _ := stats.Sum(query.QueryTime)
 		totalQueryTime += queryTime
+
+		bytes, _ := stats.Sum(query.ResponseLength)
+		totalBytes += bytes
 	}
 	return
 }
@@ -218,7 +310,6 @@ func getData(i iter) []stat {
 	stats := make(map[groupKey]*stat)
 
 	for i.Next(&doc) && i.Err() == nil {
-
 		if len(doc.Query) > 0 {
 			query := doc.Query
 			if squery, ok := doc.Query["$query"]; ok {
@@ -247,6 +338,7 @@ func getData(i iter) []stat {
 			s.NScanned = append(s.NScanned, float64(doc.DocsExamined))
 			s.NReturned = append(s.NReturned, float64(doc.Nreturned))
 			s.QueryTime = append(s.QueryTime, float64(doc.Millis))
+			s.ResponseLength = append(s.ResponseLength, float64(doc.ResponseLength))
 			var zeroTime time.Time
 			if s.FirstSeen == zeroTime || s.FirstSeen.After(doc.Ts) {
 				s.FirstSeen = doc.Ts
@@ -264,32 +356,22 @@ func getData(i iter) []stat {
 		sa = append(sa, *s)
 	}
 
-	// Sort by count, descending order
-	sort.Sort(sort.Reverse(sa))
 	return sa
-}
-
-// TODO REMOVE. Used for debug.
-func format(title string, templateData interface{}) string {
-	txt, _ := json.MarshalIndent(templateData, "", "    ")
-	return title + "\n" + string(txt)
-}
-
-// TODO REMOVE. Used for debug.
-func write(title string, templateData interface{}) {
-	txt, _ := json.MarshalIndent(templateData, "", "    ")
-	f, _ := os.Create("test/sample/" + title + ".json")
-	f.Write(txt)
-	f.Close()
 }
 
 func getOptions() (*options, error) {
 	opts := &options{Host: "localhost:27017"}
 	getopt.BoolVarLong(&opts.Help, "help", '?', "Show help")
-	getopt.StringVarLong(&opts.User, "user", 'u', "", "username")
-	getopt.StringVarLong(&opts.Password, "password", 'p', "", "password").SetOptional()
+
+	getopt.IntVarLong(&opts.Limit, "limit", 'l', "show the first n queries")
+
+	getopt.ListVarLong(&opts.OrderBy, "order-by", 'o', "comma separated list of order by fields (max values): count,query-time,docs-scanned, docs-returned. - in front of the field name denotes reverse order.")
+
 	getopt.StringVarLong(&opts.AuthDB, "auth-db", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
 	getopt.StringVarLong(&opts.Database, "database", 'd', "", "database to profile")
+	getopt.StringVarLong(&opts.Password, "password", 'p', "", "password").SetOptional()
+	getopt.StringVarLong(&opts.User, "user", 'u', "", "username")
+
 	getopt.SetParameters("host[:port][/database]")
 
 	getopt.Parse()
@@ -300,6 +382,23 @@ func getOptions() (*options, error) {
 	args := getopt.Args() // host is a positional arg
 	if len(args) > 0 {
 		opts.Host = args[0]
+	}
+
+	if getopt.IsSet("order-by") {
+		validFields := []string{"count", "query-time", "docs-scanned", "docs-returned"}
+		for _, field := range opts.OrderBy {
+			valid := false
+			for _, vf := range validFields {
+				if field == vf || field == "-"+vf {
+					valid = true
+				}
+			}
+			if !valid {
+				return nil, fmt.Errorf("invalid sort field '%q'", field)
+			}
+		}
+	} else {
+		opts.OrderBy = []string{"count"}
 	}
 
 	if getopt.IsSet("password") && opts.Password == "" {
@@ -354,26 +453,163 @@ func keys(query map[string]interface{}, level int) []string {
 	return ks
 }
 
-func getTemplate() string {
+func getQueryTemplate() string {
 
 	t := `
-# Query {{.Rank}}: x.xx QPS, ID {{.ID}}
-# Ratio {{.Ratio}}
+# Query {{.Rank}}: {{printf "% 0.2f" .QPS}} QPS, ID {{.ID}}
+# Ratio {{Format .Ratio 7.2}} (docs scanned/returned)
 # Time range: {{.FirstSeen}} to {{.LastSeen}}
-# Attribute       pct   total     min     max     avg     95%  stddev  median
-# =============== === ======= ======= ======= ======= ======= ======= =======
-# Count               {{printf "% 7d" .Count}}
-# Exec Time ms    {{printf "% 3.0f" .QueryTime.Pct}} {{printf "% 7.0f" .QueryTime.Total}} {{printf "% 7.0f" .QueryTime.Min}} {{printf "% 7.0f" .QueryTime.Max}} {{printf "% 7.0f" .QueryTime.Avg}} {{printf "% 7.0f" .QueryTime.Pct95}} {{printf "% 7.0f" .QueryTime.StdDev}} {{printf "% 7.0f" .QueryTime.Median}}
-# Lock time         
-# Docs Scanned    {{printf "% 3.0f" .Scanned.Pct}} {{printf "% 7.0f" .Scanned.Total}} {{printf "% 7.0f" .Scanned.Min}} {{printf "% 7.0f" .Scanned.Max}} {{printf "% 7.2f" .Scanned.Avg}} {{printf "% 7.2f" .Scanned.Pct95}} {{printf "% 7.2f" .Scanned.StdDev}} {{printf "% 7.2f" .Scanned.Median}}
-# Docs Returned   {{printf "% 3.0f" .Returned.Pct}} {{printf "% 7.0f" .Returned.Total}} {{printf "% 7.0f" .Returned.Min}} {{printf "% 7.0f" .Returned.Max}} {{printf "% 7.2f" .Returned.Avg}} {{printf "% 7.2f" .Returned.Pct95}} {{printf "% 7.2f" .Returned.StdDev}} {{printf "% 7.2f" .Returned.Median}}
-# Bytes sent        
-# Query size   
-# Boolean:
-# Full scan    
+# Attribute            pct     total        min         max        avg         95%        stddev      median
+# ==================   ===   ========    ========    ========    ========    ========     =======    ========
+# Count (docs)               {{printf "% 7d " .Count}}
+# Exec Time ms        {{printf "% 4.0f" .QueryTime.Pct}}   {{printf "% 7.0f " .QueryTime.Total}}    {{printf "% 7.0f " .QueryTime.Min}}    {{printf "% 7.0f " .QueryTime.Max}}    {{printf "% 7.0f " .QueryTime.Avg}}    {{printf "% 7.0f " .QueryTime.Pct95}}    {{printf "% 7.0f " .QueryTime.StdDev}}    {{printf "% 7.0f " .QueryTime.Median}}
+# Docs Scanned        {{printf "% 4.0f" .Scanned.Pct}}   {{Format .Scanned.Total 7.2}}    {{Format .Scanned.Min 7.2}}    {{Format .Scanned.Max 7.2}}    {{Format .Scanned.Avg 7.2}}    {{Format .Scanned.Pct95 7.2}}    {{Format .Scanned.StdDev 7.2}}    {{Format .Scanned.Median 7.2}}
+# Docs Returned       {{printf "% 4.0f" .Returned.Pct}}   {{Format .Returned.Total 7.2}}    {{Format .Returned.Min 7.2}}    {{Format .Returned.Max 7.2}}    {{Format .Returned.Avg 7.2}}    {{Format .Returned.Pct95 7.2}}    {{Format .Returned.StdDev 7.2}}    {{Format .Returned.Median 7.2}}
+# Bytes recv          {{printf "% 4.0f" .ResponseLength.Pct}}   {{Format .ResponseLength.Total 7.2}}    {{Format .ResponseLength.Min 7.2}}    {{Format .ResponseLength.Max 7.2}}    {{Format .ResponseLength.Avg 7.2}}    {{Format .ResponseLength.Pct95 7.2}}    {{Format .ResponseLength.StdDev 7.2}}    {{Format .ResponseLength.Median 7.2}}
 # String:
-# Namespaces      {{.Namespace}}
-# Fingerprint     {{.Fingerprint}}
+# Namespaces          {{.Namespace}}
+# Fingerprint         {{.Fingerprint}}
 `
 	return t
+}
+
+func getTotalsTemplate() string {
+	t := `
+pt-query profile
+
+# Totals
+# Ratio {{Format .Ratio 7.2}} (docs scanned/returned)
+# Attribute            pct     total        min         max        avg         95%        stddev      median
+# ==================   ===   ========    ========    ========    ========    ========     =======    ========
+# Count (docs)               {{printf "% 7d " .Count}}
+# Exec Time ms        {{printf "% 4.0f" .QueryTime.Pct}}   {{printf "% 7.0f " .QueryTime.Total}}    {{printf "% 7.0f " .QueryTime.Min}}    {{printf "% 7.0f " .QueryTime.Max}}    {{printf "% 7.0f " .QueryTime.Avg}}    {{printf "% 7.0f " .QueryTime.Pct95}}    {{printf "% 7.0f " .QueryTime.StdDev}}    {{printf "% 7.0f " .QueryTime.Median}}
+# Docs Scanned        {{printf "% 4.0f" .Scanned.Pct}}   {{Format .Scanned.Total 7.2}}    {{Format .Scanned.Min 7.2}}    {{Format .Scanned.Max 7.2}}    {{Format .Scanned.Avg 7.2}}    {{Format .Scanned.Pct95 7.2}}    {{Format .Scanned.StdDev 7.2}}    {{Format .Scanned.Median 7.2}}
+# Docs Returned       {{printf "% 4.0f" .Returned.Pct}}   {{Format .Returned.Total 7.2}}    {{Format .Returned.Min 7.2}}    {{Format .Returned.Max 7.2}}    {{Format .Returned.Avg 7.2}}    {{Format .Returned.Pct95 7.2}}    {{Format .Returned.StdDev 7.2}}    {{Format .Returned.Median 7.2}}
+# Bytes recv          {{printf "% 4.0f" .ResponseLength.Pct}}   {{Format .ResponseLength.Total 7.2}}    {{Format .ResponseLength.Min 7.2}}    {{Format .ResponseLength.Max 7.2}}    {{Format .ResponseLength.Avg 7.2}}    {{Format .ResponseLength.Pct95 7.2}}    {{Format .ResponseLength.StdDev 7.2}}    {{Format .ResponseLength.Median 7.2}}
+# 
+`
+	return t
+}
+
+type lessFunc func(p1, p2 *stat) bool
+
+type multiSorter struct {
+	queries []stat
+	less    []lessFunc
+}
+
+// Sort sorts the argument slice according to the less functions passed to OrderedBy.
+func (ms *multiSorter) Sort(queries []stat) {
+	ms.queries = queries
+	sort.Sort(ms)
+}
+
+// OrderedBy returns a Sorter that sorts using the less functions, in order.
+// Call its Sort method to sort the data.
+func OrderedBy(less ...lessFunc) *multiSorter {
+	return &multiSorter{
+		less: less,
+	}
+}
+
+// Len is part of sort.Interface.
+func (ms *multiSorter) Len() int {
+	return len(ms.queries)
+}
+
+// Swap is part of sort.Interface.
+func (ms *multiSorter) Swap(i, j int) {
+	ms.queries[i], ms.queries[j] = ms.queries[j], ms.queries[i]
+}
+
+// Less is part of sort.Interface. It is implemented by looping along the
+// less functions until it finds a comparison that is either Less or
+// !Less. Note that it can call the less functions twice per call. We
+// could change the functions to return -1, 0, 1 and reduce the
+// number of calls for greater efficiency: an exercise for the reader.
+func (ms *multiSorter) Less(i, j int) bool {
+	p, q := &ms.queries[i], &ms.queries[j]
+	// Try all but the last comparison.
+	var k int
+	for k = 0; k < len(ms.less)-1; k++ {
+		less := ms.less[k]
+		switch {
+		case less(p, q):
+			// p < q, so we have a decision.
+			return true
+		case less(q, p):
+			// p > q, so we have a decision.
+			return false
+		}
+		// p == q; try the next comparison.
+	}
+	// All comparisons to here said "equal", so just return whatever
+	// the final comparison reports.
+	return ms.less[k](p, q)
+}
+
+func sortQueries(queries []stat, orderby []string) []stat {
+	sortFuncs := []lessFunc{}
+	for _, field := range orderby {
+		var f lessFunc
+		switch field {
+		//
+		case "count":
+			f = func(c1, c2 *stat) bool {
+				return c1.Count < c2.Count
+			}
+		case "-count":
+			f = func(c1, c2 *stat) bool {
+				return c1.Count > c2.Count
+			}
+
+		//
+		case "query-time":
+			f = func(c1, c2 *stat) bool {
+				qt1, _ := stats.Max(c1.QueryTime)
+				qt2, _ := stats.Max(c2.QueryTime)
+				return qt1 < qt2
+			}
+		case "-query-time":
+			f = func(c1, c2 *stat) bool {
+				qt1, _ := stats.Max(c1.QueryTime)
+				qt2, _ := stats.Max(c2.QueryTime)
+				return qt1 > qt2
+			}
+
+		//
+		case "docs-scanned":
+			f = func(c1, c2 *stat) bool {
+				ns1, _ := stats.Max(c1.NScanned)
+				ns2, _ := stats.Max(c2.NScanned)
+				return ns1 < ns2
+			}
+		case "-docs-scanned":
+			f = func(c1, c2 *stat) bool {
+				ns1, _ := stats.Max(c1.NScanned)
+				ns2, _ := stats.Max(c2.NScanned)
+				return ns1 > ns2
+			}
+
+		//
+		case "docs-returned":
+			f = func(c1, c2 *stat) bool {
+				nr1, _ := stats.Max(c1.NReturned)
+				nr2, _ := stats.Max(c2.NReturned)
+				return nr1 < nr2
+			}
+		case "-docs-returned":
+			f = func(c1, c2 *stat) bool {
+				nr1, _ := stats.Max(c1.NReturned)
+				nr2, _ := stats.Max(c2.NReturned)
+				return nr1 > nr2
+			}
+		}
+		// count,query-time,docs-scanned, docs-returned. - in front of the field name denotes reverse order.")
+		sortFuncs = append(sortFuncs, f)
+	}
+
+	OrderedBy(sortFuncs...).Sort(queries)
+	return queries
+
 }
