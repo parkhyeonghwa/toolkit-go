@@ -3,7 +3,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -44,7 +44,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -85,7 +85,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -126,7 +126,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -167,7 +167,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -208,7 +208,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -249,7 +249,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -290,7 +290,7 @@
         "Query": {
             "find": "col1"
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -329,9 +329,10 @@
     },
     {
         "Query": {
-            "find": "col1"
+            "find": "col1",
+            "limit": 2
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,
@@ -370,9 +371,10 @@
     },
     {
         "Query": {
-            "find": "col1"
+            "find": "col1",
+            "limit": 2
         },
-        "Ts": "2016-11-08T13:46:27.251-03:00",
+        "Ts": "2016-11-08T13:46:27.000+00:00",
         "Client": "127.0.0.1",
         "ExecStats": {
             "ExecutionTimeMillisEstimate": 0,

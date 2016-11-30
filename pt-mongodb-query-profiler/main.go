@@ -351,11 +351,13 @@ func getData(i iter) []stat {
 
 	// We need to sort the data but a hash cannot be sorted so, convert the hash having
 	// the results to a slice
+
 	sa := statsArray{}
 	for _, s := range stats {
 		sa = append(sa, *s)
 	}
 
+	sort.Sort(sa)
 	return sa
 }
 
@@ -365,9 +367,9 @@ func getOptions() (*options, error) {
 
 	getopt.IntVarLong(&opts.Limit, "limit", 'l', "show the first n queries")
 
-	getopt.ListVarLong(&opts.OrderBy, "order-by", 'o', "comma separated list of order by fields (max values): count,query-time,docs-scanned, docs-returned. - in front of the field name denotes reverse order.")
+	getopt.ListVarLong(&opts.OrderBy, "order-by", 'o', "comma separated list of order by fields (max values): count,ratio,query-time,docs-scanned,docs-returned. - in front of the field name denotes reverse order.")
 
-	getopt.StringVarLong(&opts.AuthDB, "auth-db", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
+	getopt.StringVarLong(&opts.AuthDB, "authenticationDatabase", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
 	getopt.StringVarLong(&opts.Database, "database", 'd', "", "database to profile")
 	getopt.StringVarLong(&opts.Password, "password", 'p', "", "password").SetOptional()
 	getopt.StringVarLong(&opts.User, "user", 'u', "", "username")
@@ -385,7 +387,7 @@ func getOptions() (*options, error) {
 	}
 
 	if getopt.IsSet("order-by") {
-		validFields := []string{"count", "query-time", "docs-scanned", "docs-returned"}
+		validFields := []string{"count", "ratio", "query-time", "docs-scanned", "docs-returned"}
 		for _, field := range opts.OrderBy {
 			valid := false
 			for _, vf := range validFields {
@@ -423,7 +425,7 @@ func getDialInfo(opts *options) *mgo.DialInfo {
 	if getopt.IsSet("password") {
 		di.Password = opts.Password
 	}
-	if getopt.IsSet("auth-db") {
+	if getopt.IsSet("authenticationDatabase") {
 		di.Source = opts.AuthDB
 	}
 
@@ -561,6 +563,27 @@ func sortQueries(queries []stat, orderby []string) []stat {
 		case "-count":
 			f = func(c1, c2 *stat) bool {
 				return c1.Count > c2.Count
+			}
+
+		case "ratio":
+			f = func(c1, c2 *stat) bool {
+				ns1, _ := stats.Max(c1.NScanned)
+				ns2, _ := stats.Max(c2.NScanned)
+				nr1, _ := stats.Max(c1.NReturned)
+				nr2, _ := stats.Max(c2.NReturned)
+				ratio1 := ns1 / nr1
+				ratio2 := ns2 / nr2
+				return ratio1 < ratio2
+			}
+		case "-ratio":
+			f = func(c1, c2 *stat) bool {
+				ns1, _ := stats.Max(c1.NScanned)
+				ns2, _ := stats.Max(c2.NScanned)
+				nr1, _ := stats.Max(c1.NReturned)
+				nr2, _ := stats.Max(c2.NReturned)
+				ratio1 := ns1 / nr1
+				ratio2 := ns2 / nr2
+				return ratio1 > ratio2
 			}
 
 		//

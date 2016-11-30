@@ -48,13 +48,64 @@ func TestMain(m *testing.M) {
 	os.Exit(retCode)
 }
 
-func TestGetData(t *testing.T) {
-	var docs []interface{}
-	it := Server.Session().DB("samples").C("system_profile").Find(nil).Iter()
-	err := Server.Session().DB("samples").C("system_profile").Find(nil).All(&docs)
-	if err != nil {
-		t.Errorf("cannot read docs: %s", err)
+func TestCalcStats(t *testing.T) {
+	it := Server.Session().DB("samples").C("system_profile").Find(nil).Sort("Ts").Iter()
+	data := getData(it)
+	s := calcStats(data[0].NScanned)
+
+	want := statistics{Pct: 0, Total: 159, Min: 79, Max: 80, Avg: 79.5, Pct95: 80, StdDev: 0.5, Median: 79.5}
+
+	if !reflect.DeepEqual(s, want) {
+		t.Errorf("error in calcStats: got:\n%#v\nwant:\n%#v\n", s, want)
 	}
+
+	wantTotals := stat{
+		ID:             "",
+		Fingerprint:    "",
+		Namespace:      "",
+		Query:          map[string]interface{}(nil),
+		Count:          0,
+		TableScan:      false,
+		NScanned:       []float64{79, 80},
+		NReturned:      []float64{79, 80},
+		QueryTime:      []float64{27, 28},
+		ResponseLength: []float64{109, 110},
+		LockTime:       nil,
+		BlockedTime:    nil,
+		FirstSeen:      time.Time{},
+		LastSeen:       time.Time{},
+	}
+
+	totals := getTotals(data[0:1])
+
+	if !reflect.DeepEqual(totals, wantTotals) {
+		t.Errorf("error in calcStats: got:\n%#v\nwant:\n:%#v\n", totals, wantTotals)
+	}
+	var wantTotalCount int = 2
+	var wantTotalScanned, wantTotalReturned, wantTotalQueryTime, wantTotalBytes float64 = 159, 159, 55, 219
+
+	totalCount, totalScanned, totalReturned, totalQueryTime, totalBytes := calcTotals(data[0:1])
+
+	if totalCount != wantTotalCount {
+		t.Errorf("invalid total count. Want %v, got %v\n", wantTotalCount, totalCount)
+	}
+
+	if totalScanned != wantTotalScanned {
+		t.Errorf("invalid total count. Want %v, got %v\n", wantTotalScanned, totalScanned)
+	}
+	if totalReturned != wantTotalReturned {
+		t.Errorf("invalid total count. Want %v, got %v\n", wantTotalReturned, totalReturned)
+	}
+	if totalQueryTime != wantTotalQueryTime {
+		t.Errorf("invalid total count. Want %v, got %v\n", wantTotalQueryTime, totalQueryTime)
+	}
+	if totalBytes != wantTotalBytes {
+		t.Errorf("invalid total count. Want %v, got %v\n", wantTotalBytes, totalBytes)
+	}
+}
+
+func TestGetData(t *testing.T) {
+	it := Server.Session().DB("samples").C("system_profile").Find(nil).Iter()
 	tests := []struct {
 		name string
 		i    iter
@@ -65,22 +116,50 @@ func TestGetData(t *testing.T) {
 			i:    it,
 			want: []stat{
 				stat{
-					ID:          "ea170e2cafb1337755c8b3d5ae4437f4",
-					Fingerprint: "find",
-					Query:       map[string]interface{}{"find": "col1"},
-					Count:       10,
-					TableScan:   false,
-					NScanned:    []float64{71, 72, 73, 74, 75, 76, 77, 78, 79, 80},
-					NReturned:   []float64{71, 72, 73, 74, 75, 76, 77, 78, 79, 80},
-					QueryTime:   []float64{19, 20, 21, 22, 23, 24, 25, 26, 27, 28},
+					ID:          "6c3fff4804febd156700a06f9a346162",
+					Fingerprint: "find,limit",
+					Namespace:   "samples.col1",
+					Query: map[string]interface{}{
+						"find":  "col1",
+						"limit": float64(2),
+					},
+					Count:          2,
+					TableScan:      false,
+					NScanned:       []float64{79, 80},
+					NReturned:      []float64{79, 80},
+					QueryTime:      []float64{27, 28},
+					ResponseLength: []float64{109, 110},
+					LockTime:       nil,
+					BlockedTime:    nil,
+					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
+					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
+				},
+
+				stat{
+					ID:             "fdcea004122ddb225bc56de417391e25",
+					Fingerprint:    "find",
+					Namespace:      "samples.col1",
+					Query:          map[string]interface{}{"find": "col1"},
+					Count:          8,
+					TableScan:      false,
+					NScanned:       []float64{71, 72, 73, 74, 75, 76, 77, 78},
+					NReturned:      []float64{71, 72, 73, 74, 75, 76, 77, 78},
+					QueryTime:      []float64{19, 20, 21, 22, 23, 24, 25, 26},
+					ResponseLength: []float64{101, 102, 103, 104, 105, 106, 107, 108},
+					LockTime:       nil,
+					BlockedTime:    nil,
+					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
+					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
 				},
 			},
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := getData(tt.i); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("getData() = %#v, want %+v", got, tt.want)
+			got := getData(tt.i)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("got\n%#v\nwant\n%#v", got, tt.want)
 			}
 		})
 	}
