@@ -11,7 +11,7 @@ import (
 
 	"github.com/percona/toolkit-go/mongolib/proto"
 
-	"gopkg.in/mgo.v2/dbtest"
+	"gopkg.in/mgo.v2/dbtest" // mock
 )
 
 var Server dbtest.DBServer
@@ -163,6 +163,16 @@ func TestGetData(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestUptime(t *testing.T) {
+	session := Server.Session()
+	time.Sleep(1500 * time.Millisecond)
+	if uptime(session) <= 0 {
+		t.Error("uptime is 0")
+	}
+	session.Close()
+
 }
 
 func TestFingerprint(t *testing.T) {

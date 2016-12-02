@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/mock/gomock"
 	"github.com/percona/toolkit-go/mongolib/proto"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/test"
+	"github.com/vikstrous/mock/gomock"
 	"gopkg.in/mgo.v2" // mock
 	"gopkg.in/mgo.v2/bson"
 )

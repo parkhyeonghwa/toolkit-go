@@ -14,7 +14,7 @@ import (
 	"github.com/montanaflynn/stats"
 	"github.com/pborman/getopt"
 	"github.com/percona/toolkit-go/mongolib/proto"
-	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
 
@@ -180,6 +180,10 @@ func format(val float64, size float64) string {
 
 func uptime(session *mgo.Session) int64 {
 	ss := proto.ServerStatus{}
+	if err := session.Ping(); err != nil {
+		return 0
+	}
+
 	if err := session.DB("admin").Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, &ss); err != nil {
 		return 0
 	}
