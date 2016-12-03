@@ -7,4 +7,3 @@ These tools are ideal alternatives to private or "one-off" scripts because they 
 Percona Toolkit is developed and supported by Percona Inc. For more information and other free, open-source software developed by Percona, visit http://www.percona.com/software/.
 
 This is the repository for new tools, written in Go. Please visit the [main repository](https://github.com/percona/percona-toolkit) for more information.
-
