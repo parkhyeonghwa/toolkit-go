@@ -7,6 +7,7 @@ for dir in $(ls -d pt-*)
 do 
   echo "Running tests at $BASEDIR/$dir"
   cd $BASEDIR/$dir
+  go get ./...
   go test -v -coverprofile=coverage.out
   if [ -f coverage.out ]
   then
