@@ -5,4 +5,8 @@ go:
 
 services: mongodb
 
+install:
+  - go get gopkg.in/tomb.v2
+  - go get github.com/vikstrous/mock/gomock
+
 script: "./runtests.sh"
