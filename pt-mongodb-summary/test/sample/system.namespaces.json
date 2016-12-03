@@ -3,6 +3,6 @@
     "options": {
         "autoIndexId": false,
         "capped": true,
-        "size": 1.8493766246e+10
+        "size": 1.7267414016e+10
     }
 }

@@ -2,290 +2,28 @@ package main
 
 import (
 	"fmt"
-	"log"
-	"os"
 	"reflect"
 	"testing"
 	"time"
 
+	mgo "gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
+
 	"github.com/percona/toolkit-go/mongolib/proto"
+	"github.com/percona/toolkit-go/pmgo/pmgomock"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/test"
 	"github.com/vikstrous/mock/gomock"
-	"gopkg.in/mgo.v2" // mock
-	"gopkg.in/mgo.v2/bson"
 )
 
-func TestGetHostnames(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mgo.MOCK().SetController(ctrl)
-
-	session := &mgo.Session{}
-
-	mockShardsInfo := proto.ShardsInfo{
-		Shards: []proto.Shard{
-			proto.Shard{
-				ID:   "r1",
-				Host: "r1/localhost:17001,localhost:17002,localhost:17003",
-			},
-			proto.Shard{
-				ID:   "r2",
-				Host: "r2/localhost:18001,localhost:18002,localhost:18003",
-			},
-		},
-		OK: 1,
-	}
-
-	mgo.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
-	session.EXPECT().Run("listShards", gomock.Any()).SetArg(1, mockShardsInfo)
-	session.EXPECT().Close()
-
-	expect := []string{"localhost", "localhost:17001", "localhost:18001"}
-	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
-	rss, err := getHostnames(di)
-	if err != nil {
-		t.Errorf("getHostnames: %v", err)
-	}
-	if !reflect.DeepEqual(rss, expect) {
-		t.Errorf("getHostnames: got %+v, expected: %+v\n", rss, expect)
-	}
-}
-
-func TestGetReplicasetMembers(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mgo.MOCK().SetController(ctrl)
-
-	session := &mgo.Session{}
-
-	mockrss := proto.ReplicaSetStatus{
-		Date:    "",
-		MyState: 1,
-		Term:    0,
-		HeartbeatIntervalMillis: 0,
-		Members: []proto.Members{
-			proto.Members{
-				Optime:        nil,
-				OptimeDate:    "",
-				InfoMessage:   "",
-				Id:            0,
-				Name:          "localhost:17001",
-				Health:        1,
-				StateStr:      "PRIMARY",
-				Uptime:        113287,
-				ConfigVersion: 1,
-				Self:          true,
-				State:         1,
-				ElectionTime:  6340960613392449537,
-				ElectionDate:  "",
-				Set:           ""},
-			proto.Members{
-				Optime:        nil,
-				OptimeDate:    "",
-				InfoMessage:   "",
-				Id:            1,
-				Name:          "localhost:17002",
-				Health:        1,
-				StateStr:      "SECONDARY",
-				Uptime:        113031,
-				ConfigVersion: 1,
-				Self:          false,
-				State:         2,
-				ElectionTime:  0,
-				ElectionDate:  "",
-				Set:           ""},
-			proto.Members{
-				Optime:        nil,
-				OptimeDate:    "",
-				InfoMessage:   "",
-				Id:            2,
-				Name:          "localhost:17003",
-				Health:        1,
-				StateStr:      "SECONDARY",
-				Uptime:        113031,
-				ConfigVersion: 1,
-				Self:          false,
-				State:         2,
-				ElectionTime:  0,
-				ElectionDate:  "",
-				Set:           ""}},
-		Ok:  1,
-		Set: "r1",
-	}
-	expect := []proto.Members{
-		proto.Members{
-			Optime:        nil,
-			OptimeDate:    "",
-			InfoMessage:   "",
-			Id:            0,
-			Name:          "localhost:17001",
-			Health:        1,
-			StateStr:      "PRIMARY",
-			Uptime:        113287,
-			ConfigVersion: 1,
-			Self:          true,
-			State:         1,
-			ElectionTime:  6340960613392449537,
-			ElectionDate:  "",
-			Set:           "r1"},
-		proto.Members{Optime: (*proto.Optime)(nil),
-			OptimeDate:    "",
-			InfoMessage:   "",
-			Id:            1,
-			Name:          "localhost:17002",
-			Health:        1,
-			StateStr:      "SECONDARY",
-			Uptime:        113031,
-			ConfigVersion: 1,
-			Self:          false,
-			State:         2,
-			ElectionTime:  0,
-			ElectionDate:  "",
-			Set:           "r1"},
-		proto.Members{Optime: (*proto.Optime)(nil),
-			OptimeDate:    "",
-			InfoMessage:   "",
-			Id:            2,
-			Name:          "localhost:17003",
-			Health:        1,
-			StateStr:      "SECONDARY",
-			Uptime:        113031,
-			ConfigVersion: 1,
-			Self:          false,
-			State:         2,
-			ElectionTime:  0,
-			ElectionDate:  "",
-			Set:           "r1",
-		}}
-
-	mgo.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
-	session.EXPECT().Run(bson.M{"replSetGetStatus": 1}, gomock.Any()).SetArg(1, mockrss)
-	session.EXPECT().Close()
-
-	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
-	rss, err := GetReplicasetMembers([]string{"localhost"}, di)
-	if err != nil {
-		t.Errorf("getReplicasetMembers: %v", err)
-	}
-	if !reflect.DeepEqual(rss, expect) {
-		t.Errorf("getReplicasetMembers: got %+v, expected: %+v\n", rss, expect)
-	}
-
-}
-
-func TestGetOplogInfo(t *testing.T) {
-
-	d := os.Getenv("BASEDIR")
-	if d == "" {
-		log.Printf("cannot get BASEDIR env var")
-		return
-	}
-
-	var oploginfo interface{}
-	test.LoadJson(d+"/test/sample/system.namespaces.json", &oploginfo)
-
-}
-
-func TestGetTemplateData(t *testing.T) {
-
-	return
-	d := os.Getenv("BASEDIR")
-	if d == "" {
-		log.Printf("cannot get BASEDIR env var")
-		return
-	}
-
-	shardsInfo := proto.ShardsInfo{}
-	test.LoadJson(d+"/test/sample/shardsinfo.json", &shardsInfo)
-
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
-
-	mgo.MOCK().SetController(ctrl)
-
-	session := &mgo.Session{}
-
-	mgo.EXPECT().Dial(gomock.Any()).Return(session, nil)
-	session.EXPECT().Run("listShards", gomock.Any()).SetArg(1, shardsInfo)
-	session.EXPECT().Close()
-
-	mgo.EXPECT().Dial(gomock.Any()).Return(session, nil)
-
-	var bi mgo.BuildInfo
-	test.LoadJson(d+"/test/sample/buildinfo.json", &bi)
-	session.EXPECT().BuildInfo().Return(bi, nil)
-
-	var md proto.MasterDoc
-	test.LoadJson(d+"/test/sample/ismaster.json", &md)
-	session.EXPECT().Run("isMaster", gomock.Any()).SetArg(1, md)
-
-	// serverStatus
-	database := &mgo.Database{}
-	ss := proto.ServerStatus{}
-	test.LoadJson(d+"/test/sample/serverstatus.json", &ss)
-	ss.Pid = int64(os.Getpid()) // To make the call to getTemplateData not fail
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-
-	// serverStatus for getOpCountersStats
-	ss.Pid = int64(os.Getpid()) // To make the call to getTemplateData not fail
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, ss)
-
-	// get host info
-	hi := proto.HostInfo{}
-	test.LoadJson(d+"/test/sample/hostinfo.json", &hi)
-	session.EXPECT().Run(bson.M{"hostInfo": 1}, gomock.Any()).SetArg(1, hi)
-
-	// get security settings
-	cmdopts := proto.CommandLineOptions{}
-	test.LoadJson(d+"/test/sample/cmdopts.json", &cmdopts)
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().Run(bson.D{{"getCmdLineOpts", 1}, {"recordStats", 1}}, gomock.Any()).SetArg(1, cmdopts)
-
-	usersCol := &mgo.Collection{}
-	rolesCol := &mgo.Collection{}
-
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().C("system.users").Return(usersCol)
-	usersCol.EXPECT().Count().Return(1, nil)
-
-	session.EXPECT().DB("admin").Return(database)
-	database.EXPECT().C("system.roles").Return(rolesCol)
-	rolesCol.EXPECT().Count().Return(2, nil)
-
-	//
-	session.EXPECT().Close()
-
-}
-
 func TestGetOpCounterStats(t *testing.T) {
-	d := os.Getenv("BASEDIR")
-	if d == "" {
-		log.Printf("cannot get BASEDIR env var")
-		return
-	}
-
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mgo.MOCK().SetController(ctrl)
-
-	session := &mgo.Session{}
-	database := &mgo.Database{}
+	session := pmgomock.NewMockSessionManager(ctrl)
+	database := pmgomock.NewMockDatabaseManager(ctrl)
 
 	ss := proto.ServerStatus{}
-	test.LoadJson(d+"/test/sample/serverstatus.json", &ss)
+	test.LoadJson("test/sample/serverstatus.json", &ss)
 
 	// serverStatus for getOpCountersStats
 	session.EXPECT().DB("admin").Return(database)
@@ -407,12 +145,11 @@ func TestSecurityOpts(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mgo.MOCK().SetController(ctrl)
+	session := pmgomock.NewMockSessionManager(ctrl)
+	database := pmgomock.NewMockDatabaseManager(ctrl)
 
-	session := &mgo.Session{}
-	database := &mgo.Database{}
-	usersCol := &mgo.Collection{}
-	rolesCol := &mgo.Collection{}
+	usersCol := pmgomock.NewMockCollectionManager(ctrl)
+	rolesCol := pmgomock.NewMockCollectionManager(ctrl)
 
 	for i, cmd := range cmdopts {
 		session.EXPECT().DB("admin").Return(database)
@@ -450,12 +187,10 @@ func TestGetNodeType(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	defer ctrl.Finish()
 
-	mgo.MOCK().SetController(ctrl)
-
-	session := &mgo.Session{}
+	session := pmgomock.NewMockSessionManager(ctrl)
 	for _, m := range md {
 		session.EXPECT().Run("isMaster", gomock.Any()).SetArg(1, m.in)
-		nodeType, err := getNodeType(session)
+		nodeType, err := getNodeType2(session)
 		if err != nil {
 			t.Errorf("cannot get node type: %+v, error: %s\n", m.in, err)
 		}
@@ -464,7 +199,7 @@ func TestGetNodeType(t *testing.T) {
 		}
 	}
 	session.EXPECT().Run("isMaster", gomock.Any()).Return(fmt.Errorf("some fake error"))
-	nodeType, err := getNodeType(session)
+	nodeType, err := getNodeType2(session)
 	if err == nil {
 		t.Errorf("error expected, got nil")
 	}
@@ -472,4 +207,163 @@ func TestGetNodeType(t *testing.T) {
 		t.Errorf("expected blank node type, got %s", nodeType)
 	}
 
+}
+
+func TestGetReplicasetMembers(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	dialer := pmgomock.NewMockDialerInterface(ctrl)
+
+	session := pmgomock.NewMockSessionManager(ctrl)
+
+	mockrss := proto.ReplicaSetStatus{
+		Date:    "",
+		MyState: 1,
+		Term:    0,
+		HeartbeatIntervalMillis: 0,
+		Members: []proto.Members{
+			proto.Members{
+				Optime:        nil,
+				OptimeDate:    "",
+				InfoMessage:   "",
+				Id:            0,
+				Name:          "localhost:17001",
+				Health:        1,
+				StateStr:      "PRIMARY",
+				Uptime:        113287,
+				ConfigVersion: 1,
+				Self:          true,
+				State:         1,
+				ElectionTime:  6340960613392449537,
+				ElectionDate:  "",
+				Set:           ""},
+			proto.Members{
+				Optime:        nil,
+				OptimeDate:    "",
+				InfoMessage:   "",
+				Id:            1,
+				Name:          "localhost:17002",
+				Health:        1,
+				StateStr:      "SECONDARY",
+				Uptime:        113031,
+				ConfigVersion: 1,
+				Self:          false,
+				State:         2,
+				ElectionTime:  0,
+				ElectionDate:  "",
+				Set:           ""},
+			proto.Members{
+				Optime:        nil,
+				OptimeDate:    "",
+				InfoMessage:   "",
+				Id:            2,
+				Name:          "localhost:17003",
+				Health:        1,
+				StateStr:      "SECONDARY",
+				Uptime:        113031,
+				ConfigVersion: 1,
+				Self:          false,
+				State:         2,
+				ElectionTime:  0,
+				ElectionDate:  "",
+				Set:           ""}},
+		Ok:  1,
+		Set: "r1",
+	}
+	expect := []proto.Members{
+		proto.Members{
+			Optime:        nil,
+			OptimeDate:    "",
+			InfoMessage:   "",
+			Id:            0,
+			Name:          "localhost:17001",
+			Health:        1,
+			StateStr:      "PRIMARY",
+			Uptime:        113287,
+			ConfigVersion: 1,
+			Self:          true,
+			State:         1,
+			ElectionTime:  6340960613392449537,
+			ElectionDate:  "",
+			Set:           "r1"},
+		proto.Members{Optime: (*proto.Optime)(nil),
+			OptimeDate:    "",
+			InfoMessage:   "",
+			Id:            1,
+			Name:          "localhost:17002",
+			Health:        1,
+			StateStr:      "SECONDARY",
+			Uptime:        113031,
+			ConfigVersion: 1,
+			Self:          false,
+			State:         2,
+			ElectionTime:  0,
+			ElectionDate:  "",
+			Set:           "r1"},
+		proto.Members{Optime: (*proto.Optime)(nil),
+			OptimeDate:    "",
+			InfoMessage:   "",
+			Id:            2,
+			Name:          "localhost:17003",
+			Health:        1,
+			StateStr:      "SECONDARY",
+			Uptime:        113031,
+			ConfigVersion: 1,
+			Self:          false,
+			State:         2,
+			ElectionTime:  0,
+			ElectionDate:  "",
+			Set:           "r1",
+		}}
+
+	dialer.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
+	session.EXPECT().Run(bson.M{"replSetGetStatus": 1}, gomock.Any()).SetArg(1, mockrss)
+	session.EXPECT().Close()
+
+	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
+	rss, err := GetReplicasetMembers(dialer, []string{"localhost"}, di)
+	if err != nil {
+		t.Errorf("getReplicasetMembers: %v", err)
+	}
+	if !reflect.DeepEqual(rss, expect) {
+		t.Errorf("getReplicasetMembers: got %+v, expected: %+v\n", rss, expect)
+	}
+
+}
+
+func TestGetHostnames(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	dialer := pmgomock.NewMockDialerInterface(ctrl)
+	session := pmgomock.NewMockSessionManager(ctrl)
+
+	mockShardsInfo := proto.ShardsInfo{
+		Shards: []proto.Shard{
+			proto.Shard{
+				ID:   "r1",
+				Host: "r1/localhost:17001,localhost:17002,localhost:17003",
+			},
+			proto.Shard{
+				ID:   "r2",
+				Host: "r2/localhost:18001,localhost:18002,localhost:18003",
+			},
+		},
+		OK: 1,
+	}
+
+	dialer.EXPECT().DialWithInfo(gomock.Any()).Return(session, nil)
+	session.EXPECT().Run("listShards", gomock.Any()).SetArg(1, mockShardsInfo)
+	session.EXPECT().Close()
+
+	expect := []string{"localhost", "localhost:17001", "localhost:18001"}
+	di := &mgo.DialInfo{Addrs: []string{"localhost"}}
+	rss, err := getHostnames(dialer, di)
+	if err != nil {
+		t.Errorf("getHostnames: %v", err)
+	}
+	if !reflect.DeepEqual(rss, expect) {
+		t.Errorf("getHostnames: got %+v, expected: %+v\n", rss, expect)
+	}
 }

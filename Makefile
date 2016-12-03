@@ -15,7 +15,7 @@ style:
 
 test:
 	@echo ">> running tests"
-	@$(GO) test -short -race $(pkgs)
+	@./runtests.sh
 
 format:
 	@echo ">> formatting code"

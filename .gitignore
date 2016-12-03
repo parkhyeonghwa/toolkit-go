@@ -1,1 +1,4 @@
 pt-mongodb-query-profiler/pt-mongodb-query-profiler
+pt-mongodb-summary/pt-mongodb-summary
+*.out
+bin/*

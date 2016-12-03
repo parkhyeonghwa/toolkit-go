@@ -12,6 +12,7 @@ import (
 	"github.com/howeyc/gopass"
 	"github.com/pborman/getopt"
 	"github.com/percona/toolkit-go/mongolib/proto"
+	"github.com/percona/toolkit-go/pmgo"
 	"github.com/percona/toolkit-go/pt-mongodb-summary/templates"
 	"github.com/pkg/errors"
 	"github.com/shirou/gopsutil/process"
@@ -142,17 +143,18 @@ func main() {
 		Source:   opts.AuthDB,
 	}
 
-	hostnames, err := getHostnames(di)
+	dialer := pmgo.NewDialer()
 
-	session, err := mgo.DialWithInfo(di)
+	hostnames, err := getHostnames(dialer, di)
+
+	session, err := dialer.DialWithInfo(di)
 	if err != nil {
 		log.Printf("cannot connect to the db: %s", err)
 		os.Exit(1)
 	}
 	defer session.Close()
 
-	//
-	if replicaMembers, err := GetReplicasetMembers(hostnames, di); err != nil {
+	if replicaMembers, err := GetReplicasetMembers(dialer, hostnames, di); err != nil {
 		log.Printf("[Error] cannot get replicaset members: %v\n", err)
 	} else {
 		t := template.Must(template.New("replicas").Parse(templates.Replicas))
@@ -208,7 +210,58 @@ func main() {
 
 }
 
-func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
+func GetHostinfo2(session pmgo.SessionManager) (*hostInfo, error) {
+
+	hi := proto.HostInfo{}
+	if err := session.Run(bson.M{"hostInfo": 1}, &hi); err != nil {
+		return nil, errors.Wrap(err, "GetHostInfo.hostInfo")
+	}
+
+	cmdOpts := proto.CommandLineOptions{}
+	err := session.DB("admin").Run(bson.D{{"getCmdLineOpts", 1}, {"recordStats", 1}}, &cmdOpts)
+	if err != nil {
+		return nil, errors.Wrap(err, "cannot get command line options")
+	}
+
+	ss := proto.ServerStatus{}
+	if err := session.DB("admin").Run(bson.D{{"serverStatus", 1}, {"recordStats", 1}}, &ss); err != nil {
+		return nil, errors.Wrap(err, "GetHostInfo.serverStatus")
+	}
+
+	pi := procInfo{}
+	if err := getProcInfo(int32(ss.Pid), &pi); err != nil {
+		pi.Error = err
+	}
+
+	nodeType, _ := getNodeType2(session)
+
+	i := &hostInfo{
+		Hostname:          hi.System.Hostname,
+		HostOsType:        hi.Os.Type,
+		HostSystemCPUArch: hi.System.CpuArch,
+		HostDatabases:     hi.DatabasesCount,
+		HostCollections:   hi.CollectionsCount,
+		DBPath:            "", // Sets default. It will be overriden later if necessary
+
+		ProcessName: ss.Process,
+		Version:     ss.Version,
+		NodeType:    nodeType,
+
+		ProcPath:       pi.Path,
+		ProcUserName:   pi.UserName,
+		ProcCreateTime: pi.CreateTime,
+	}
+	if ss.Repl != nil {
+		i.ReplicasetName = ss.Repl.SetName
+	}
+
+	if cmdOpts.Parsed.Storage.DbPath != "" {
+		i.DBPath = cmdOpts.Parsed.Storage.DbPath
+	}
+
+	return i, nil
+}
+func GetHostinfo(session pmgo.SessionManager) (*hostInfo, error) {
 
 	hi := proto.HostInfo{}
 	if err := session.Run(bson.M{"hostInfo": 1}, &hi); err != nil {
@@ -260,9 +313,9 @@ func GetHostinfo(session *mgo.Session) (*hostInfo, error) {
 	return i, nil
 }
 
-func getHostnames(di *mgo.DialInfo) ([]string, error) {
+func getHostnames(dialer pmgo.Dialer, di *mgo.DialInfo) ([]string, error) {
 
-	session, err := mgo.DialWithInfo(di)
+	session, err := dialer.DialWithInfo(di)
 	if err != nil {
 		return nil, err
 	}
@@ -285,7 +338,7 @@ func getHostnames(di *mgo.DialInfo) ([]string, error) {
 	return hostnames, nil
 }
 
-func GetClusterwideInfo(session *mgo.Session) (*clusterwideInfo, error) {
+func GetClusterwideInfo(session pmgo.SessionManager) (*clusterwideInfo, error) {
 	var databases databases
 
 	err := session.Run(bson.M{"listDatabases": 1}, &databases)
@@ -333,12 +386,12 @@ func sizeAndUnit(size int64) (float64, string) {
 	return newSize, unit[idx]
 }
 
-func GetReplicasetMembers(hostnames []string, di *mgo.DialInfo) ([]proto.Members, error) {
+func GetReplicasetMembers(dialer pmgo.Dialer, hostnames []string, di *mgo.DialInfo) ([]proto.Members, error) {
 	replicaMembers := []proto.Members{}
 
 	for _, hostname := range hostnames {
 		di.Addrs = []string{hostname}
-		session, err := mgo.DialWithInfo(di)
+		session, err := dialer.DialWithInfo(di)
 		if err != nil {
 			return nil, errors.Wrapf(err, "getReplicasetMembers. cannot connect to %s", hostname)
 		}
@@ -358,7 +411,7 @@ func GetReplicasetMembers(hostnames []string, di *mgo.DialInfo) ([]proto.Members
 	return replicaMembers, nil
 }
 
-func GetSecuritySettings(session *mgo.Session) (*security, error) {
+func GetSecuritySettings(session pmgo.SessionManager) (*security, error) {
 	s := security{
 		Auth: "disabled",
 		SSL:  "disabled",
@@ -403,7 +456,7 @@ func write(title string, templateData interface{}) {
 	f.Close()
 }
 
-func getNodeType(session *mgo.Session) (string, error) {
+func getNodeType2(session pmgo.SessionManager) (string, error) {
 	md := proto.MasterDoc{}
 	err := session.Run("isMaster", &md)
 	if err != nil {
@@ -420,7 +473,24 @@ func getNodeType(session *mgo.Session) (string, error) {
 	return "mongod", nil
 }
 
-func GetOpCountersStats(session *mgo.Session, count int64, sleep time.Duration) (*opCounters, error) {
+func getNodeType(session pmgo.SessionManager) (string, error) {
+	md := proto.MasterDoc{}
+	err := session.Run("isMaster", &md)
+	if err != nil {
+		return "", err
+	}
+
+	if md.SetName != nil || md.Hosts != nil {
+		return "replset", nil
+	} else if md.Msg == "isdbgrid" {
+		// isdbgrid is always the msg value when calling isMaster on a mongos
+		// see http://docs.mongodb.org/manual/core/sharded-cluster-query-router/
+		return "mongos", nil
+	}
+	return "mongod", nil
+}
+
+func GetOpCountersStats(session pmgo.SessionManager, count int64, sleep time.Duration) (*opCounters, error) {
 	oc := &opCounters{}
 	ss := proto.ServerStatus{}
 
@@ -557,7 +627,7 @@ func getDbsAndCollectionsCount(hostnames []string) (int, int, error) {
 	return len(dbnames), len(colnames), nil
 }
 
-func GetBalancerStats(session *mgo.Session) (*proto.BalancerStats, error) {
+func GetBalancerStats(session pmgo.SessionManager) (*proto.BalancerStats, error) {
 
 	scs, err := GetShardingChangelogStatus(session)
 	if err != nil {
@@ -587,7 +657,7 @@ func GetBalancerStats(session *mgo.Session) (*proto.BalancerStats, error) {
 	return s, nil
 }
 
-func GetShardingChangelogStatus(session *mgo.Session) (*proto.ShardingChangelogStats, error) {
+func GetShardingChangelogStatus(session pmgo.SessionManager) (*proto.ShardingChangelogStats, error) {
 	var qresults []proto.ShardingChangelogSummary
 	coll := session.DB("config").C("changelog")
 	match := bson.M{"time": bson.M{"$gt": time.Now().Add(-240 * time.Hour)}}

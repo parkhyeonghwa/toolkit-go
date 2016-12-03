@@ -1,0 +1,8 @@
+language: go
+
+go:
+  - master
+
+services: mongodb
+
+script: runtests.sh
