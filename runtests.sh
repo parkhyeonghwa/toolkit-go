@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 export BASEDIR=$(git rev-parse --show-toplevel)
 export CHECK_SESSIONS=0
 cd $BASEDIR
