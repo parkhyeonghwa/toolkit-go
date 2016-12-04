@@ -159,10 +159,10 @@ func TestGetData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getData(tt.i)
 			if !reflect.DeepEqual(got, tt.want) {
-				fmt.Println("Unix format:", got[0].FirstSeen.Format(time.UnixDate))
-				fmt.Println("Unix format:", got[0].LastSeen.Format(time.UnixDate))
-				fmt.Println("Unix format:", tt.want[0].FirstSeen.Format(time.UnixDate))
-				fmt.Println("Unix format:", tt.want[0].LastSeen.Format(time.UnixDate))
+				t.Error("got first seen:", got[0].FirstSeen.Format(time.UnixDate))
+				t.Error("got last seen:", got[0].LastSeen.Format(time.UnixDate))
+				t.Error("want first seen", tt.want[0].FirstSeen.Format(time.UnixDate))
+				t.Error("want last seen:", tt.want[0].LastSeen.Format(time.UnixDate))
 				t.Errorf("got\n%#v\nwant\n%#v", got, tt.want)
 
 			}
