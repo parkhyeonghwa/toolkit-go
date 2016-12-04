@@ -131,8 +131,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{109, 110},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
-					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
+					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
+					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
 				},
 
 				stat{
@@ -148,8 +148,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{101, 102, 103, 104, 105, 106, 107, 108},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
-					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
+					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
+					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
 				},
 			},
 		},
