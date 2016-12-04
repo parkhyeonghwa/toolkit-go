@@ -1,5 +1,8 @@
 #Percona MongoDB Go driver
 
+[![](https://godoc.org/github.com/percona/toolkit-go/pmgo?status.svg)](https://godoc.org/github.com/percona/toolkit-go/pmgo)
+
+
 This is just a collection of interfaces around the structures in mgo, ([Rich MongoDB driver for Go](https://labix.org/mgo)) to be able to mock methods in the driver.  
 
 The motivation for this package is that there are certain things, like errors, that cannot be tested/reproduced using a real db connection.  
