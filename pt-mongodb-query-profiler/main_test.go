@@ -131,8 +131,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{109, 110},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
-					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
+					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
+					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
 				},
 
 				stat{
@@ -148,8 +148,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{101, 102, 103, 104, 105, 106, 107, 108},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
-					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.Local),
+					FirstSeen:      time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
+					LastSeen:       time.Date(2016, time.November, 8, 10, 46, 27, 0, time.UTC),
 				},
 			},
 		},
@@ -159,7 +159,12 @@ func TestGetData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getData(tt.i)
 			if !reflect.DeepEqual(got, tt.want) {
+				fmt.Println("Unix format:", got[0].FirstSeen.Format(time.UnixDate))
+				fmt.Println("Unix format:", got[0].LastSeen.Format(time.UnixDate))
+				fmt.Println("Unix format:", tt.want[0].FirstSeen.Format(time.UnixDate))
+				fmt.Println("Unix format:", tt.want[0].LastSeen.Format(time.UnixDate))
 				t.Errorf("got\n%#v\nwant\n%#v", got, tt.want)
+
 			}
 		})
 	}
