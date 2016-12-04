@@ -131,8 +131,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{109, 110},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
-					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
+					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC).Local(),
+					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC).Local(),
 				},
 
 				stat{
@@ -148,8 +148,8 @@ func TestGetData(t *testing.T) {
 					ResponseLength: []float64{101, 102, 103, 104, 105, 106, 107, 108},
 					LockTime:       nil,
 					BlockedTime:    nil,
-					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
-					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC),
+					FirstSeen:      time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC).Local(),
+					LastSeen:       time.Date(2016, time.November, 8, 13, 46, 27, 0, time.UTC).Local(),
 				},
 			},
 		},
@@ -159,10 +159,6 @@ func TestGetData(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := getData(tt.i)
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Error("got first seen:", got[0].FirstSeen.Format(time.UnixDate))
-				t.Error("got last seen:", got[0].LastSeen.Format(time.UnixDate))
-				t.Error("want first seen", tt.want[0].FirstSeen.Format(time.UnixDate))
-				t.Error("want last seen:", tt.want[0].LastSeen.Format(time.UnixDate))
 				t.Errorf("got\n%#v\nwant\n%#v", got, tt.want)
 
 			}
