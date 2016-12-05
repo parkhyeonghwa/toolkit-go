@@ -25,19 +25,8 @@ vet:
 	@echo ">> vetting code"
 	@$(GO) vet $(pkgs)
 
-build: promu
+build: 
 	@echo ">> building binaries"
 	@$(GO) build -ldflags "-w -s -X main.Version=${VERSION} -X main.Build=${BUILD}"
 
-tarball: promu
-	@echo ">> building release tarball"
-	@$(GO) tarball
-
-
-promu:
-	@GOOS=$(shell uname -s | tr A-Z a-z) \
-		GOARCH=$(subst x86_64,amd64,$(patsubst i%86,386,$(shell uname -m))) \
-		$(GO) get -u github.com/prometheus/promu
-
-
-.PHONY: all style format build test vet tarball docker promu
+.PHONY: all style format build test vet tarball 

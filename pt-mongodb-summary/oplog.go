@@ -99,7 +99,6 @@ func getOplogCollection(session *mgo.Session) (string, error) {
 
 	var res interface{}
 	if err := nsCol.Find(bson.M{"name": "local." + oplog}).One(&res); err == nil {
-		write("system.namespaces", res)
 		return oplog, nil
 	}
 
@@ -108,7 +107,6 @@ func getOplogCollection(session *mgo.Session) (string, error) {
 		return "", fmt.Errorf("neither master/slave nor replica set replication detected")
 	}
 
-	write("oplog.main", res)
 	return oplog, nil
 }
 
@@ -119,6 +117,5 @@ func getOplogEntry(session *mgo.Session, oplogCol string) (*proto.OplogEntry, er
 	if err != nil {
 		return nil, fmt.Errorf("local.%s, or its options, not found in system.namespaces collection", oplogCol)
 	}
-	write("test/samples/oplog_entry.json", olEntry)
 	return olEntry, nil
 }

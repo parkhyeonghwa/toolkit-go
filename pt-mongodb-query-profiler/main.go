@@ -18,6 +18,11 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
+var (
+	Version string
+	Build   string
+)
+
 type iter interface {
 	All(result interface{}) error
 	Close() error
@@ -37,6 +42,7 @@ type options struct {
 	OrderBy  []string
 	Password string
 	User     string
+	Version  bool
 }
 
 const (
@@ -113,6 +119,13 @@ func main() {
 	}
 	if opts.Help {
 		getopt.Usage()
+		return
+	}
+
+	if opts.Version {
+		fmt.Println("pt-mongodb-summary")
+		fmt.Printf("Version %s\n", Version)
+		fmt.Printf("Build: %s\n", Build)
 		return
 	}
 
@@ -368,6 +381,7 @@ func getData(i iter) []stat {
 func getOptions() (*options, error) {
 	opts := &options{Host: "localhost:27017"}
 	getopt.BoolVarLong(&opts.Help, "help", '?', "Show help")
+	getopt.BoolVarLong(&opts.Version, "version", 'v', "", "show version & exit")
 
 	getopt.IntVarLong(&opts.Limit, "limit", 'l', "show the first n queries")
 

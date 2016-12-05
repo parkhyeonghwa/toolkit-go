@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"log"
@@ -18,6 +17,11 @@ import (
 	"github.com/shirou/gopsutil/process"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+)
+
+var (
+	Version string
+	Build   string
 )
 
 type hostInfo struct {
@@ -103,15 +107,18 @@ type options struct {
 	Password string
 	AuthDB   string
 	Debug    bool
+	Version  bool
 }
 
 func main() {
 
 	opts := options{Host: "localhost:27017"}
 	help := getopt.BoolLong("help", '?', "Show help")
+	getopt.BoolVarLong(&opts.Version, "version", 'v', "", "show version & exit")
+
 	getopt.StringVarLong(&opts.User, "user", 'u', "", "username")
 	getopt.StringVarLong(&opts.Password, "password", 'p', "", "password").SetOptional()
-	getopt.StringVarLong(&opts.AuthDB, "auth-db", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
+	getopt.StringVarLong(&opts.AuthDB, "authenticationDatabase", 'a', "admin", "database used to establish credentials and privileges with a MongoDB server")
 	getopt.SetParameters("host[:port]")
 
 	getopt.Parse()
@@ -123,6 +130,13 @@ func main() {
 	args := getopt.Args() // positional arg
 	if len(args) > 0 {
 		opts.Host = args[0]
+	}
+
+	if opts.Version {
+		fmt.Println("pt-mongodb-summary")
+		fmt.Printf("Version %s\n", Version)
+		fmt.Printf("Build: %s\n", Build)
+		return
 	}
 
 	if getopt.IsSet("password") && opts.Password == "" {
@@ -233,7 +247,7 @@ func GetHostinfo2(session pmgo.SessionManager) (*hostInfo, error) {
 		pi.Error = err
 	}
 
-	nodeType, _ := getNodeType2(session)
+	nodeType, _ := getNodeType(session)
 
 	i := &hostInfo{
 		Hostname:          hi.System.Hostname,
@@ -441,36 +455,6 @@ func GetSecuritySettings(session pmgo.SessionManager) (*security, error) {
 	}
 
 	return &s, nil
-}
-
-// TODO REMOVE. Used for debug.
-func format(title string, templateData interface{}) string {
-	txt, _ := json.MarshalIndent(templateData, "", "    ")
-	return title + "\n" + string(txt)
-}
-
-func write(title string, templateData interface{}) {
-	txt, _ := json.MarshalIndent(templateData, "", "    ")
-	f, _ := os.Create("test/sample/" + title + ".json")
-	f.Write(txt)
-	f.Close()
-}
-
-func getNodeType2(session pmgo.SessionManager) (string, error) {
-	md := proto.MasterDoc{}
-	err := session.Run("isMaster", &md)
-	if err != nil {
-		return "", err
-	}
-
-	if md.SetName != nil || md.Hosts != nil {
-		return "replset", nil
-	} else if md.Msg == "isdbgrid" {
-		// isdbgrid is always the msg value when calling isMaster on a mongos
-		// see http://docs.mongodb.org/manual/core/sharded-cluster-query-router/
-		return "mongos", nil
-	}
-	return "mongod", nil
 }
 
 func getNodeType(session pmgo.SessionManager) (string, error) {
