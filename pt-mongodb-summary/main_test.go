@@ -190,7 +190,7 @@ func TestGetNodeType(t *testing.T) {
 	session := pmgomock.NewMockSessionManager(ctrl)
 	for _, m := range md {
 		session.EXPECT().Run("isMaster", gomock.Any()).SetArg(1, m.in)
-		nodeType, err := getNodeType2(session)
+		nodeType, err := getNodeType(session)
 		if err != nil {
 			t.Errorf("cannot get node type: %+v, error: %s\n", m.in, err)
 		}
@@ -199,7 +199,7 @@ func TestGetNodeType(t *testing.T) {
 		}
 	}
 	session.EXPECT().Run("isMaster", gomock.Any()).Return(fmt.Errorf("some fake error"))
-	nodeType, err := getNodeType2(session)
+	nodeType, err := getNodeType(session)
 	if err == nil {
 		t.Errorf("error expected, got nil")
 	}
